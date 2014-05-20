@@ -21,9 +21,8 @@ function elasticksblktest()
     T  = 297;     % temperature [K]
     R  = 83.141;  % [cm^3.bar/(mole.K)]
     
-    %epsn=para(14);    %epsilon  Need to specify what this is, and what units we
-    epsn=100; %right value in bar
-    %         are using!!!
+ 
+    epsn=100; %Phleom tissue drained modulus [bar] adpated from Thompson2003
 
     dt=2;
     tprev=0;
@@ -64,27 +63,16 @@ function elasticksblktest()
     B3 = spdiags([e e], 0:1,Nc,Nc);
     
     
-    
     % difference matrix for computing the velocity
     %   by differencing the pressure
     Dp = spdiags([-e e],[0 1],Nc-1,Nc);
     Dp = [zeros(1,Nc); Dp; zeros(1,Nc)];
-    % modify the difference matrix when
-    %   there is a blockage
-    %
-%     Dpblock = Dp;
-%     Dpblock(k_block_p,:) = zeros(1,Nc);
+
     
     %difference matrix of volocity
     Du = spdiags([-ones(Nc+1,1) ones(Nc+1,1)],[0 1],Nc+1,Nc+1);
     
-    
-    % matrix for solving for pressure
-    %
-    
-    
     % initalize
-    %
     c = 0*xc;
     t = 0;
     r = r0*ones(Nc,1);     % radius of sieve [cm]
@@ -97,7 +85,7 @@ function elasticksblktest()
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     recintv=5;
-    recpoint=0:recintv:maxtime;
+    rectimept=0:recintv:maxtime; %recoreded at these time points
     k=1; %index of recorded time point
     numofrec=fix(maxtime/20);
     c_mat=zeros(Nc,numofrec);
@@ -107,21 +95,20 @@ function elasticksblktest()
     xe_thin=zeros(6,1);
     xc_thin=zeros(6,1);
     
+%%%%animation storage
     cc=zeros(length(c),1000);
     pp=zeros(length(p),1000);
     uu=zeros(length(u),1000);
     AA=zeros(length(A),1000);
     tt=zeros(1000,1);
-   
-    
-    
+    F(900) = struct('cdata',[],'colormap',[]);   
     
     irec=0;
     recflag=0;
-    F(900) = struct('cdata',[],'colormap',[]);
     findex=1;
     while t<maxtime
         if( (t > t_block) && (t < t_open) )
+            %blockage at five points
             Ks(k_block_p-2)=Ks(k_block_p-2)*0.1;
             Ks(k_block_p-1)=Ks(k_block_p-1)*0.001;
             Ks(k_block_p)=Ks(k_block_p)*0.0001;
@@ -130,15 +117,11 @@ function elasticksblktest()
         end
         
         if( (t >= t_open) && (t < t_open+100) )
+            %slow release blockage
             Ks(k_block_p-1)=Ks(k_block_p-1)*(t-t_open)*0.01;
             Ks(k_block_p)=Ks(k_block_p)*(t-t_open)*0.01;
             Ks(k_block_p+1)=Ks(k_block_p+1)*(t-t_open)*0.01;
         end
-        
-        
-        % choose a time step
-        % flexible time step
-        %dt = 0.8*dx/(max(abs(u)));
 
         
         % compute the upwind flux
@@ -148,14 +131,10 @@ function elasticksblktest()
         Al = [0; A];
         Ar = [A; 0];
         
-        %J  = u.*cl.*double(u > 0) + u.*cr.*double( u < 0 );
+
         J  = u.*Al.*cl.*double(u > 0) + u.*Ar.*cr.*double( u < 0 );
         
         % solve for new concentration
-        %
-        %rhs = c - dt/dx*(J(2:end) - J(1:end-1)) + dt*S./A;
-        %clast = c;
-        %c  = rhs./(1+dt*ku./A);
         clast=c;
         CA=c.*A;
         Deltau=Du*u;
@@ -186,18 +165,12 @@ function elasticksblktest()
         BA2 (2:end-1) = -BA1(1:end-2) - BA3(3:end);
 
         %%%%boundary condition here, bug fixed 11/09
-        %BA2(1)=BA2(1)/2;
         BA2(1)=-epsn*Ks(1)/(A(1)*dx^2)*((A(2)+A(1))/2); 
-        %BA2(end)=BA2(2)/2;
         BA2(end)=-epsn*Ks(end)/(A(end)*dx^2)*((A(end)+A(end-1))/2); 
 
            
         % form BA matrix from diagonals
         %
-        %BA=spdiags([BA1 BA2 BA3],-1:1,Nc,Nc);
-        
-                 
-            %BA=spdiags([BA1 BA2 BA3],-1:1,Nc,Nc);
             subdiag=-dt*BA1;
             diag=ones(Nc,1)+(epsn./A)*2*pi.*r*Kp*dt-BA2*dt;
             supdiag=-dt*BA3;
@@ -219,14 +192,9 @@ function elasticksblktest()
         %  it carefully
         %
         
-        %test =spdiags(1+(epsn./A)*2*pi.*r*Kp*dt,0,Nc,Nc) -dt.*BA;
+
         lhs=spdiags([subdiag diag supdiag],-1:1,Nc,Nc);
         p = lhs\rhs;
-    
-        %%plot(xc,p,'ro');
-        %%title(sprintf('time = %g',t));
-        %%pause(0.1);
-        %%%        keyboard
     
         
         Kstmp=B1*Ks*0.5;
@@ -234,9 +202,9 @@ function elasticksblktest()
         u  = D*p.*Kstmp;
         A = A0*ones(Nc,1).*exp((p-p0)/epsn);
         r = sqrt(A/pi);
+        %%%%%%%%%%%Made Ks a function of r
         Ks=(r/r0).^4*Ks0;
         t = t + dt;
-        % update the time
         
         %%adjust time step
         if dt>0.1*dx/(max(abs(u)))
@@ -252,9 +220,8 @@ function elasticksblktest()
         end
         %dt=0.1;
         
-        if ( t>=recpoint(k)) %%%need adapatable code
+        if ( t>=rectimept(k)) 
             k=k+1;
-            %disp(t);
             if recflag==1
                 irec=irec+1;
                 timearr(irec)=t;
@@ -278,12 +245,9 @@ function elasticksblktest()
         end
 
 
-        %if ( mod(t,5)<0.01 && t>1.5e+04)
-        %if ( mod(t,5)<0.01) 
+
         if ( t-tprev>2 && t>t_block-60 && t<t_open+600)
             tprev=t;
-
-            
             hf=figure(1);
             %set(hf,'Position',[0 0 1400 700])
             subplot(4,1,1);
